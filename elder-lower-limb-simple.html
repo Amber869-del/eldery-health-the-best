@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>下肢體能評估｜簡易長輩模式</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+    <style>
+        :root { --navy:#0b1120; --panel:#111827; --green:#059669; --yellow:#facc15; }
+        * { box-sizing:border-box; }
+        html, body { min-height:100%; margin:0; }
+        body { min-height:100vh; padding:18px; color:#f8fafc; background:#020617; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft JhengHei",sans-serif; }
+        .page { width:min(1180px,100%); min-height:calc(100vh - 36px); margin:auto; }
+        .topbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 18px; margin-bottom:14px; background:rgba(15,23,42,.96); border:1px solid #1e293b; border-radius:20px; }
+        .title { margin:0; font-size:clamp(1rem,2.5vw,1.5rem); }
+        .subtitle { margin:4px 0 0; color:#94a3b8; font-size:.85rem; }
+        button { border:0; border-radius:10px; padding:12px 16px; color:#fff; font-weight:800; cursor:pointer; }
+        button:focus-visible { outline:4px solid var(--yellow); }
+        .camera-toggle { background:var(--green); }
+        .camera-toggle.off { background:#e11d48; }
+        .fullscreen { background:#334155; white-space:nowrap; }
+        .screen-panel { position:relative; overflow:hidden; padding:18px; background:var(--panel); border:1px solid #1e293b; border-radius:20px; box-shadow:0 12px 30px rgba(0,0,0,.35); }
+        .screen-title { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:12px; color:#e2e8f0; font-size:clamp(.95rem,2vw,1.2rem); font-weight:900; }
+        .badge { padding:6px 10px; color:#fcd34d; background:rgba(245,158,11,.15); border:1px solid rgba(245,158,11,.45); border-radius:999px; font-size:.78rem; white-space:nowrap; }
+        .video-wrap { position:relative; width:100%; min-height:calc(100vh - 180px); overflow:hidden; display:flex; align-items:center; justify-content:center; background:#000; border:2px solid #1e293b; border-radius:16px; }
+        video, canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+        .alignment-box { position:absolute; z-index:3; width:min(45%,360px); height:75%; min-height:300px; display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:18px 12px; border:4px dashed var(--yellow); border-radius:28px; pointer-events:none; }
+        .alignment-box span { padding:8px 12px; color:#fef08a; background:rgba(0,0,0,.72); border-radius:999px; font-size:clamp(.75rem,1.8vw,1rem); font-weight:900; text-align:center; }
+        #alignInstruction { color:#111827; background:#f59e0b; border-radius:12px; }
+        .placeholder { position:absolute; z-index:4; max-width:90%; padding:18px 24px; color:#94a3b8; background:rgba(15,23,42,.9); border:1px solid #334155; border-radius:18px; text-align:center; font-size:clamp(.85rem,2vw,1.1rem); }
+        .placeholder.hidden, .alignment-box.hidden { display:none; }
+        .bottom-controls { position:absolute; z-index:6; right:0; bottom:24px; left:0; display:flex; justify-content:center; gap:10px; }
+        .start-button { color:#111827; background:#f59e0b; }
+        .start-button.running { color:#fff; background:#dc2626; }
+        .voice-button { background:#334155; }
+        .notice { min-height:1.5em; margin-top:10px; color:#cbd5e1; text-align:center; font-size:.95rem; }
+        @media(max-width:700px) { body{padding:8px}.page{min-height:calc(100vh - 16px)}.topbar{align-items:stretch;flex-direction:column;padding:12px}.camera-toggle,.fullscreen{width:100%}.screen-panel{padding:10px;border-radius:14px}.screen-title{align-items:flex-start;flex-direction:column}.video-wrap{min-height:calc(100vh - 170px);border-radius:12px}.alignment-box{width:52%;min-height:250px}.bottom-controls{bottom:14px;flex-direction:column;padding:0 18px}.bottom-controls button{width:100%} }
+    </style>
+</head>
+<body>
+    <main class="page">
+        <header class="topbar">
+            <div>
+                <h1 class="title">📹 AI 全身骨架肌力監測系統</h1>
+                <p class="subtitle">下肢與體能評估｜只顯示檢測畫面</p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+                <span id="cameraBadge" class="badge">請先開啟鏡頭</span>
+                <button id="cameraButton" class="camera-toggle" type="button" onclick="toggleCamera()">開啟鏡頭（開始）</button>
+                <button class="fullscreen" type="button" onclick="toggleFullscreen()">⛶ 全螢幕</button>
+            </div>
+        </header>
+
+        <section class="screen-panel" id="screenPanel">
+            <div class="screen-title">
+                <span>🦵 下肢體能評估</span>
+                <button id="voiceButton" class="voice-button" type="button" onclick="toggleVoice()">🔊 語音教學：開</button>
+            </div>
+            <div class="video-wrap">
+                <video id="webcam" autoplay playsinline muted></video>
+                <canvas id="outputCanvas"></canvas>
+                <div id="alignmentBox" class="alignment-box">
+                    <span>請將身體保持在框內</span>
+                    <span id="alignInstruction">請點擊上方按鈕開始</span>
+                </div>
+                <div id="placeholder" class="placeholder">請點擊上方「開啟鏡頭」以啟用 AI 骨架追蹤</div>
+                <div class="bottom-controls">
+                    <button id="startButton" class="start-button" type="button" onclick="startMeasurement()">請點擊上方按鈕開始</button>
+                </div>
+            </div>
+            <div id="notice" class="notice" aria-live="polite">請先開啟鏡頭，再依照畫面提示站好。</div>
+        </section>
+    </main>
+
+    <script>
+        let camera = null;
+        let pose = null;
+        let cameraRunning = false;
+        let measuring = false;
+        let measurementStartedAt = null;
+        let currentSessionNumber = 0;
+        let currentSessionId = null;
+        let repetitionCount = 0;
+        let legState = 'waitingDown';
+        let downFrameCount = 0;
+        let upFrameCount = 0;
+        let lastRepAt = 0;
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAniUvKCNrI8uCF4-RgkTQkun-4ZkQ1CGg",
+            authDomain: "heart-c720e.firebaseapp.com",
+            databaseURL: "https://heart-c720e-default-rtdb.firebaseio.com",
+            projectId: "heart-c720e",
+            storageBucket: "heart-c720e.firebasestorage.app",
+            messagingSenderId: "215297407903",
+            appId: "1:215297407903:web:a8537d1e859f67b542dbaa",
+            measurementId: "G-N68LPKKWE7"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const cloudDatabase = firebase.database();
+        let voiceEnabled = localStorage.getItem('lower_limb_voice_enabled') !== 'false';
+
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('outputCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function speak(text) {
+            if (!voiceEnabled || !('speechSynthesis' in window)) return;
+            speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'zh-TW';
+            utterance.rate = .6;
+            utterance.pitch = 1;
+            speechSynthesis.speak(utterance);
+        }
+
+        function toggleVoice() {
+            voiceEnabled = !voiceEnabled;
+            localStorage.setItem('lower_limb_voice_enabled', String(voiceEnabled));
+            if (!voiceEnabled && 'speechSynthesis' in window) speechSynthesis.cancel();
+            document.getElementById('voiceButton').textContent = voiceEnabled ? '🔊 語音教學：開' : '🔇 語音教學：關';
+            if (voiceEnabled) speak('語音教學已開啟。');
+        }
+
+        function initPose() {
+            pose = new Pose({ locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}` });
+            pose.setOptions({ modelComplexity:1, smoothLandmarks:true, minDetectionConfidence:.5, minTrackingConfidence:.5 });
+            pose.onResults(drawPose);
+        }
+
+    function drawPose(results) {
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (results.poseLandmarks) {
+                drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, {color:'#10b981', lineWidth:3});
+                drawLandmarks(ctx, results.poseLandmarks, {color:'#f59e0b', lineWidth:1, radius:4});
+                if (measuring) detectLegRaise(results.poseLandmarks);
+            }
+        }
+
+        function detectLegRaise(landmarks) {
+            const leftHip = landmarks[23], rightHip = landmarks[24];
+            const leftKnee = landmarks[25], rightKnee = landmarks[26];
+            const isVisible = point => point && (point.visibility == null || point.visibility > .45);
+            const candidates = [
+                { hip: leftHip, knee: leftKnee },
+                { hip: rightHip, knee: rightKnee }
+            ].filter(item => isVisible(item.hip) && isVisible(item.knee));
+            if (!candidates.length) return;
+
+            const target = candidates.sort((a, b) =>
+                (b.knee.visibility + b.hip.visibility) - (a.knee.visibility + a.hip.visibility)
+            )[0];
+            const verticalGap = target.knee.y - target.hip.y;
+            const now = Date.now();
+
+            // 先確認雙腳在下方，避免一開始站姿被誤判成抬腳。
+            if (legState === 'waitingDown') {
+                if (verticalGap > .08) downFrameCount++;
+                else downFrameCount = 0;
+                if (downFrameCount >= 6) {
+                    legState = 'down';
+                    upFrameCount = 0;
+                    document.getElementById('alignInstruction').textContent = '請抬高一隻腳';
+                }
+                return;
+            }
+
+            // 膝蓋必須明顯高於髖部，且連續多個影格成立才算抬起。
+            if (legState === 'down') {
+                // 不要求膝蓋一定高過髖部；膝蓋接近髖部即可判定為抬腿。
+                if (verticalGap < .04) upFrameCount++;
+                else upFrameCount = 0;
+                if (upFrameCount >= 4) {
+                    legState = 'up';
+                    document.getElementById('alignInstruction').textContent = '很好，請放下腳完成一次';
+                }
+                return;
+            }
+
+            // 抬起後回到下方，才完成一次；每次至少間隔 1.2 秒。
+            if (legState === 'up') {
+                if (verticalGap > .07 && now - lastRepAt > 900) {
+                    repetitionCount++;
+                    lastRepAt = now;
+                    legState = 'down';
+                    upFrameCount = 0;
+                    document.getElementById('alignInstruction').textContent = `已完成第 ${repetitionCount} 次，請再抬腳`;
+                    document.getElementById('notice').textContent = `目前實際完成 ${repetitionCount} 次抬腳。`;
+                    speak(`完成第 ${repetitionCount} 次抬腳。`);
+                    saveExerciseRecord('rep_completed', repetitionCount);
+                }
+            }
+        }
+
+        async function toggleCamera() {
+            const button = document.getElementById('cameraButton');
+            const badge = document.getElementById('cameraBadge');
+            const placeholder = document.getElementById('placeholder');
+            if (!cameraRunning) {
+                try {
+                    if (!pose) initPose();
+                    camera = new Camera(video, { onFrame: async () => pose.send({image:video}), width:640, height:480 });
+                    await camera.start();
+                    cameraRunning = true;
+                    placeholder.classList.add('hidden');
+                    button.textContent = '關閉鏡頭';
+                    button.classList.add('off');
+                    badge.textContent = '鏡頭運作中';
+                    document.getElementById('alignInstruction').textContent = '站到框內後，按開始檢測';
+                    document.getElementById('startButton').textContent = '開始檢測';
+                    document.getElementById('notice').textContent = '鏡頭已開啟，請站到黃色框內。';
+                    speak('鏡頭已開啟。請將身體保持在黃色框內。');
+                } catch (error) {
+                    document.getElementById('notice').textContent = '無法開啟鏡頭，請允許瀏覽器使用相機。';
+                    speak('無法開啟鏡頭，請確認相機權限。');
+                    console.error(error);
+                }
+            } else {
+                if (camera) camera.stop();
+                cameraRunning = false;
+                measuring = false;
+                placeholder.classList.remove('hidden');
+                document.getElementById('alignmentBox').classList.remove('hidden');
+                button.textContent = '開啟鏡頭（開始）';
+                button.classList.remove('off');
+                badge.textContent = '請先開啟鏡頭';
+                document.getElementById('startButton').textContent = '請點擊上方按鈕開始';
+                document.getElementById('notice').textContent = '鏡頭已關閉。';
+                speak('鏡頭已關閉。');
+            }
+        }
+
+        async function startMeasurement() {
+            if (!cameraRunning) { speak('請先開啟鏡頭。'); document.getElementById('notice').textContent = '請先開啟鏡頭。'; return; }
+            measuring = !measuring;
+            const button = document.getElementById('startButton');
+            const instruction = document.getElementById('alignInstruction');
+            if (measuring) {
+                measurementStartedAt = Date.now();
+                repetitionCount = 0;
+                legState = 'waitingDown';
+                downFrameCount = 0;
+                upFrameCount = 0;
+                lastRepAt = 0;
+                currentSessionNumber = await getTodayCompletedCount() + 1;
+                currentSessionId = cloudDatabase.ref('elderlySports/records').push().key;
+                saveExerciseRecord('started');
+                document.getElementById('alignmentBox').classList.add('hidden');
+                button.textContent = '停止檢測';
+                button.classList.add('running');
+                document.getElementById('notice').textContent = '檢測進行中，請依照畫面完成動作。';
+                speak(`檢測開始，這是今天第 ${currentSessionNumber} 次。請依照畫面完成下肢動作。`);
+            } else {
+                const completedStatus = repetitionCount > 0 ? 'completed' : 'cancelled';
+                saveExerciseRecord(completedStatus, repetitionCount);
+                document.getElementById('alignmentBox').classList.remove('hidden');
+                instruction.textContent = repetitionCount > 0 ? `完成 ${repetitionCount} 次，請休息` : '尚未偵測到抬腳';
+                button.textContent = '再次開始檢測';
+                button.classList.remove('running');
+                document.getElementById('notice').textContent = repetitionCount > 0
+                    ? `今天第 ${currentSessionNumber} 次檢測完成，共 ${repetitionCount} 次抬腳，紀錄已同步。`
+                    : '尚未偵測到完整抬腳動作，本次不算完成。';
+                speak(repetitionCount > 0
+                    ? `今天第 ${currentSessionNumber} 次檢測完成，共 ${repetitionCount} 次抬腳，紀錄已同步。`
+                    : '尚未偵測到完整抬腳動作，本次不算完成。');
+            }
+        }
+
+        async function getTodayCompletedCount() {
+            try {
+                const snapshot = await cloudDatabase.ref('elderlySports/records').once('value');
+                const startOfDay = new Date();
+                startOfDay.setHours(0, 0, 0, 0);
+                return Object.values(snapshot.val() || {}).filter(record =>
+                    record.exercise === '下肢體能評估' &&
+                    record.status === 'completed' &&
+                    Number(record.completedReps || 0) > 0 &&
+                    Number(record.createdAt || record.startedAt || 0) >= startOfDay.getTime()
+                ).length;
+            } catch (error) {
+                console.error('Firebase 次數讀取失敗：', error);
+                return 0;
+            }
+        }
+
+        function saveExerciseRecord(status, repNumber = 0) {
+            const startedAt = measurementStartedAt || Date.now();
+            const record = {
+                sessionId: currentSessionId,
+                sessionNumber: currentSessionNumber,
+                repNumber,
+                completedReps: repetitionCount,
+                exercise: '下肢體能評估',
+                status,
+                startedAt,
+                durationSeconds: status === 'completed' ? Math.max(0, Math.round((Date.now() - startedAt) / 1000)) : 0,
+                source: 'elder-lower-limb-simple',
+                createdAt: firebase.database.ServerValue.TIMESTAMP
+            };
+            cloudDatabase.ref('elderlySports/records').push(record)
+                .then(() => { document.getElementById('notice').textContent = status === 'completed' ? '檢測已完成，紀錄已同步。' : '檢測已開始。'; })
+                .catch(error => { console.error('Firebase 寫入失敗：', error); document.getElementById('notice').textContent = '檢測畫面正常，但雲端紀錄同步失敗。'; });
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+            else document.exitFullscreen?.();
+        }
+
+        document.getElementById('voiceButton').textContent = voiceEnabled ? '🔊 語音教學：開' : '🔇 語音教學：關';
+    </script>
+<button onclick="location.href='elder-mode-home.html'" style="position:fixed;right:18px;bottom:18px;z-index:20;background:#facc15;color:#14532d;border:3px solid #14532d;border-radius:16px;padding:16px 20px;font-size:1.15rem;font-weight:900;cursor:pointer">↩ 返回長輩模式主畫面</button>
+</body>
+</html>
