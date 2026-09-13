@@ -35,17 +35,19 @@
         .exercise-name { margin:0; color:#5eead4; font-size:clamp(1.2rem,3vw,1.8rem); }
         .frame { position:relative; flex:1; min-height:650px; overflow:hidden; background:#000; border:2px solid #1e293b; border-radius:16px; }
         video,canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
-        .alignment { position:absolute; z-index:3; width:42%; height:72%; min-height:300px; display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:18px 12px; border:4px dashed var(--yellow); border-radius:28px; pointer-events:none; }
+        .alignment { position:absolute; z-index:3; top:50%; left:50%; transform:translate(-50%,-50%); width:42%; height:72%; min-height:300px; display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:18px 12px; border:4px dashed var(--yellow); border-radius:28px; pointer-events:none; }
         .alignment span { padding:8px 12px; color:#fef08a; background:rgba(0,0,0,.72); border-radius:999px; font-size:clamp(.75rem,1.8vw,1rem); font-weight:900; text-align:center; }
         #instruction { color:#111827; background:#f59e0b; border-radius:12px; }
         .placeholder { position:absolute; z-index:4; max-width:90%; padding:18px 24px; color:#94a3b8; background:rgba(15,23,42,.9); border:1px solid #334155; border-radius:18px; text-align:center; }
         .hidden { display:none !important; }
         .controls { position:absolute; z-index:6; right:0; bottom:20px; left:0; display:flex; justify-content:center; gap:10px; padding:0 18px; }
-        .camera { background:var(--green); }.camera.off { background:#e11d48; }
+        .camera { display:none; background:var(--green); }.camera.off { background:#e11d48; }
         .start { color:#111827; background:#f59e0b; }.start.running { color:#fff; background:#dc2626; }
         .return { position:fixed; z-index:20; right:20px; bottom:20px; padding:15px 20px; color:#14532d; background:var(--yellow); border:3px solid #14532d; border-radius:16px; font-size:1.2rem; }
+        .home-main-return { margin-top:22px; color:#14532d; background:var(--yellow); border:3px solid #14532d; border-radius:16px; padding:15px 22px; font-size:1.2rem; font-weight:900; }
         .notice { min-height:1.5em; color:#cbd5e1; text-align:center; }
         @media(max-width:700px) { body{padding:8px}.topbar{align-items:stretch;flex-direction:column}.topbar button{width:100%}.mode-grid{grid-template-columns:1fr}.mode:last-child{grid-column:auto}.frame{min-height:calc(100vh - 170px)}.alignment{width:54%;min-height:250px}.controls{bottom:12px;flex-direction:column}.controls button{width:100%}.return{right:12px;bottom:12px;left:12px;width:calc(100% - 24px)} }
+        body > button[onclick*="elder-mode-home"] { display:none !important; }
     </style>
 </head>
 <body>
@@ -63,14 +65,15 @@
                 <button class="mode" onclick="openExercise(1)">👐 雙臂水平擴胸開合<small>雙手向左右打開</small></button>
                 <button class="mode" onclick="openExercise(2)">🙆 雙手交替向上舉高<small>左右手輪流舉高</small></button>
             </div>
+            <button class="home-main-return" onclick="location.href='elder-mode-home.html'">↩ 返回長輩模式主畫面</button>
         </section>
 
         <section id="view" class="view">
             <div class="toolbar"><h2 id="exerciseName" class="exercise-name">上肢活動訓練</h2><div><button class="fullscreen" onclick="toggleFullscreen()">⛶ 全螢幕</button></div></div>
             <div class="frame" id="frame">
                 <video id="webcam" autoplay playsinline muted></video><canvas id="canvas"></canvas>
-                <div id="alignment" class="alignment"><span>請將上半身保持在框內</span><span id="instruction">請先開啟鏡頭</span></div>
-                <div id="placeholder" class="placeholder">請點擊「開啟鏡頭」以啟用 AI 姿勢追蹤</div>
+                <div id="alignment" class="alignment"><span>請將上半身保持在框內</span><span id="instruction">鏡頭正在開啟</span></div>
+                <div id="placeholder" class="placeholder">正在自動開啟鏡頭，請稍候</div>
                 <div class="controls"><button id="cameraButton" class="camera" onclick="toggleCamera()">開啟鏡頭</button><button id="startButton" class="start" onclick="startSession()">開始檢測</button></div>
             </div>
             <div id="notice" class="notice">請先開啟鏡頭，再依照畫面提示開始。</div>
@@ -107,10 +110,12 @@
         }
         function countAction(unit,value){ actionCount++;lastAction=Date.now();sampleValues.push(Math.round(value));document.getElementById('instruction').textContent=`已完成第 ${actionCount} ${unit}`;document.getElementById('notice').textContent=`目前完成 ${actionCount} ${unit}，請繼續。`;speak(`完成第 ${actionCount} ${unit}。`); }
         async function toggleCamera(){ const btn=document.getElementById('cameraButton'); if(!cameraRunning){ try{if(!pose)initPose();camera=new Camera(video,{onFrame:async()=>pose.send({image:video}),width:640,height:480});await camera.start();cameraRunning=true;document.getElementById('placeholder').classList.add('hidden');btn.textContent='關閉鏡頭';btn.classList.add('off');document.getElementById('instruction').textContent='站好後按開始檢測';speak('鏡頭已開啟，請站好後按開始檢測。');}catch(e){document.getElementById('notice').textContent='無法開啟鏡頭，請確認相機權限。';console.error(e);} }else{if(camera)camera.stop();cameraRunning=false;playing=false;clearInterval(timer);btn.textContent='開啟鏡頭';btn.classList.remove('off');document.getElementById('placeholder').classList.remove('hidden');speak('鏡頭已關閉。');} }
-        async function startSession(){ if(!cameraRunning){speak('請先開啟鏡頭。');return;} if(playing){finishSession();return;} actionCount=0;sampleValues=[];minX=9999;maxX=-9999;minY=9999;maxY=-9999;lastAction=0;sessionNumber=await todaySessionCount()+1;playing=true;timeLeft=30;document.getElementById('startButton').textContent='停止檢測';document.getElementById('startButton').classList.add('running');document.getElementById('alignment').classList.add('hidden');document.getElementById('notice').textContent=`今天第 ${sessionNumber} 次上肢檢測開始。`;speak(`這是今天第 ${sessionNumber} 次上肢檢測。${exercises[currentIndex].voice}`);timer=setInterval(()=>{timeLeft--;if(timeLeft<=0)finishSession();},1000); }
+        async function startSession(){ if(!cameraRunning){speak('鏡頭還在開啟，請稍候再按開始檢測。');return;} if(playing){finishSession();return;} actionCount=0;sampleValues=[];minX=9999;maxX=-9999;minY=9999;maxY=-9999;lastAction=0;sessionNumber=await todaySessionCount()+1;playing=true;timeLeft=30;document.getElementById('startButton').textContent='停止檢測';document.getElementById('startButton').classList.add('running');document.getElementById('alignment').classList.add('hidden');document.getElementById('notice').textContent=`今天第 ${sessionNumber} 次上肢檢測開始。`;speak(`這是今天第 ${sessionNumber} 次上肢檢測。${exercises[currentIndex].voice}`);timer=setInterval(()=>{timeLeft--;if(timeLeft<=0)finishSession();},1000); }
         async function finishSession(){ if(!playing)return;playing=false;clearInterval(timer);document.getElementById('startButton').textContent='開始檢測';document.getElementById('startButton').classList.remove('running');document.getElementById('alignment').classList.remove('hidden');if(actionCount>0){await saveUpperRecord();document.getElementById('notice').textContent=`今天第 ${sessionNumber} 次完成，共 ${actionCount} ${currentIndex===0?'圈':'次'}，已同步。`;speak(`運動時間完成，共完成 ${actionCount} ${currentIndex===0?'圈':'次'}，資料已同步。`);}else{document.getElementById('notice').textContent='尚未偵測到有效動作，本次不算完成。';speak('尚未偵測到有效動作，本次不算完成。');}}
         async function todaySessionCount(){try{const snap=await db.ref('elderlySports/upperLimbRecords').once('value');const start=new Date();start.setHours(0,0,0,0);return Object.values(snap.val()||{}).filter(r=>r.status==='completed'&&Number(r.createdAt||0)>=start.getTime()).length;}catch(e){console.error(e);return 0;}}
         function saveUpperRecord(){const value=sampleValues.length?Math.round(sampleValues.reduce((a,b)=>a+b,0)/sampleValues.length):0;return db.ref('elderlySports/upperLimbRecords').push({sessionNumber,exercise:exercises[currentIndex].title,exerciseIndex:currentIndex,completedActions:actionCount,averageValue:value,status:'completed',source:'elder-upper-limb-simple',createdAt:firebase.database.ServerValue.TIMESTAMP}).catch(e=>{console.error(e);document.getElementById('notice').textContent='動作已完成，但 Firebase 同步失敗。';});}
+        const originalToggleCamera=toggleCamera;toggleCamera=async function(){const wasRunning=cameraRunning;await originalToggleCamera();if(!wasRunning&&cameraRunning)speak('鏡頭已開啟，請選擇想要做的運動。');};
+        window.addEventListener('load',()=>setTimeout(()=>toggleCamera(),300));
         updateVoice();
     </script>
 <button onclick="location.href='elder-mode-home.html'" style="position:fixed;right:18px;bottom:18px;z-index:20;background:#facc15;color:#14532d;border:3px solid #14532d;border-radius:16px;padding:16px 20px;font-size:1.15rem;font-weight:900;cursor:pointer">↩ 返回長輩模式主畫面</button>
